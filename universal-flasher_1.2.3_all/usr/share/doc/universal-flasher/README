@@ -1,0 +1,8 @@
+通用单片机烧录工具 v1.2.3
+============================
+
+安装:
+  sudo dpkg -i universal-flasher_1.2.3_all.deb
+
+卸载:
+  sudo dpkg -r universal-flasher

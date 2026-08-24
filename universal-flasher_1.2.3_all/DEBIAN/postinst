@@ -1,0 +1,145 @@
+#!/bin/bash
+set -e
+
+ENV_NAME="universal-flasher"
+
+# ========== 获取真实用户 ==========
+REAL_USER=$(logname 2>/dev/null || echo "")
+REAL_HOME=""
+
+if [ -n "$REAL_USER" ] && [ "$REAL_USER" != "root" ]; then
+    REAL_HOME="/home/$REAL_USER"
+fi
+
+if [ -z "$REAL_HOME" ]; then
+    for user_dir in /home/*; do
+        [ -d "$user_dir" ] || continue
+        if [ -x "$user_dir/miniconda3/bin/conda" ] || [ -x "$user_dir/anaconda3/bin/conda" ]; then
+            REAL_USER=$(basename "$user_dir")
+            REAL_HOME="$user_dir"
+            break
+        fi
+    done
+fi
+
+if [ -z "$REAL_HOME" ]; then
+    REAL_USER="root"
+    REAL_HOME="/root"
+fi
+
+echo "========================================"
+echo "  通用烧录工具 - conda 环境配置"
+echo "========================================"
+echo "  检测用户: $REAL_USER"
+echo "  用户目录: $REAL_HOME"
+
+# ========== 步骤1: 检测 conda ==========
+echo "[1/7] 检测 conda 环境..."
+CONDA_BASE=""
+
+for base in "$REAL_HOME/miniconda3" "$REAL_HOME/anaconda3" "/opt/miniconda3" "/opt/anaconda3"; do
+    if [ -x "$base/bin/conda" ]; then
+        CONDA_BASE="$base"
+        break
+    fi
+done
+
+if [ -n "$CONDA_BASE" ]; then
+    echo "  ✅ 检测到现有 conda: $CONDA_BASE"
+else
+    echo "  ❌ 未检测到 conda"
+fi
+
+# ========== 步骤2: 无 conda 时安装 ==========
+if [ -z "$CONDA_BASE" ]; then
+    echo "[2/7] 从清华源安装 miniconda3..."
+    wget -q --show-progress "https://mirrors.tuna.tsinghua.edu.cn/anaconda/miniconda/Miniconda3-latest-Linux-x86_64.sh" -O /tmp/miniconda.sh
+    bash /tmp/miniconda.sh -b -p "$REAL_HOME/miniconda3"
+    rm -f /tmp/miniconda.sh
+    chown -R "$REAL_USER:$REAL_USER" "$REAL_HOME/miniconda3" 2>/dev/null || true
+    CONDA_BASE="$REAL_HOME/miniconda3"
+    echo "  ✅ miniconda3 安装完成"
+else
+    echo "[2/7] 跳过 miniconda 安装（已有 conda）"
+fi
+
+# ========== 步骤3: ToS + 清华源 ==========
+echo "[3/7] 配置 conda..."
+"$CONDA_BASE/bin/conda" tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main 2>/dev/null || true
+"$CONDA_BASE/bin/conda" tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r 2>/dev/null || true
+
+"$CONDA_BASE/bin/conda" config --remove channels defaults 2>/dev/null || true
+"$CONDA_BASE/bin/conda" config --remove channels https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/r 2>/dev/null || true
+"$CONDA_BASE/bin/conda" config --remove channels https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/free 2>/dev/null || true
+"$CONDA_BASE/bin/conda" config --add channels https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/main --force 2>/dev/null || true
+"$CONDA_BASE/bin/conda" config --set show_channel_urls yes --force 2>/dev/null || true
+echo "  ✅ 清华源配置完成"
+
+# ========== 步骤4: 创建环境 ==========
+echo "[4/7] 创建 conda 环境: $ENV_NAME..."
+if ! "$CONDA_BASE/bin/conda" env list 2>/dev/null | grep -q "^$ENV_NAME "; then
+    "$CONDA_BASE/bin/conda" create -n "$ENV_NAME" python=3.10 -y
+    echo "  ✅ 环境创建完成"
+else
+    echo "  ✅ 环境已存在"
+fi
+
+# ========== 步骤5: 先装 cffi（解决依赖冲突）==========
+echo "[5/7] 安装基础依赖..."
+ENV_PIP="$CONDA_BASE/envs/$ENV_NAME/bin/pip"
+ENV_CONDA="$CONDA_BASE/bin/conda"
+"$ENV_CONDA" install -n "$ENV_NAME" -y cffi 2>/dev/null || \
+"$ENV_PIP" install -i https://pypi.tuna.tsinghua.edu.cn/simple cffi
+echo "  ✅ cffi 安装完成"
+
+# ========== 步骤6: 安装 pyocd 和 stcgal（清华 pip 源）==========
+echo "[6/7] 安装 pyocd 0.44.1 和 stcgal..."
+"$ENV_PIP" install -i https://pypi.tuna.tsinghua.edu.cn/simple pyocd==0.44.1 stcgal
+echo "  ✅ Python 包安装完成"
+
+# ========== 步骤7: Pack + udev ==========
+echo "[7/7] 配置 Pack 和 USB 权限..."
+PACK_SRC="/usr/share/universal-flasher/packs"
+PACK_DST="$REAL_HOME/.local/share/cmsis-pack-manager/packs"
+mkdir -p "$PACK_DST"
+if [ -d "$PACK_SRC" ]; then
+    for f in "$PACK_SRC"/*.pack; do
+        [ -f "$f" ] || continue
+        cp -n "$f" "$PACK_DST/" 2>/dev/null || true
+        echo "  ✅ $(basename $f)"
+    done
+fi
+chown -R "$REAL_USER:$REAL_USER" "$REAL_HOME/.local" 2>/dev/null || true
+
+UDEV_FILE="/etc/udev/rules.d/99-universal-flasher.rules"
+if [ ! -f "$UDEV_FILE" ]; then
+    cat > "$UDEV_FILE" << 'UDEOF'
+SUBSYSTEM=="usb", ATTR{idVendor}=="faed", ATTR{idProduct}=="4870", MODE="0666", GROUP="plugdev"
+SUBSYSTEM=="usb", ATTR{idVendor}=="0d28", ATTR{idProduct}=="0204", MODE="0666", GROUP="plugdev"
+SUBSYSTEM=="usb", ATTR{idVendor}=="c251", ATTR{idProduct}=="f001", MODE="0666", GROUP="plugdev"
+SUBSYSTEM=="usb", ATTR{idVendor}=="0483", ATTR{idProduct}=="3748", MODE="0666", GROUP="plugdev"
+SUBSYSTEM=="usb", ATTR{idVendor}=="0483", ATTR{idProduct}=="374b", MODE="0666", GROUP="plugdev"
+SUBSYSTEM=="usb", ATTR{idVendor}=="0483", ATTR{idProduct}=="3752", MODE="0666", GROUP="plugdev"
+SUBSYSTEM=="usb", ATTR{idVendor}=="1366", ATTR{idProduct}=="0101", MODE="0666", GROUP="plugdev"
+SUBSYSTEM=="usb", ATTR{idVendor}=="1366", ATTR{idProduct}=="0105", MODE="0666", GROUP="plugdev"
+UDEOF
+    udevadm control --reload-rules 2>/dev/null || true
+    udevadm trigger 2>/dev/null || true
+    echo "  ✅ udev 规则已添加"
+fi
+
+if [ -n "$REAL_USER" ] && [ "$REAL_USER" != "root" ]; then
+    usermod -a -G plugdev "$REAL_USER" 2>/dev/null || true
+    echo "  ✅ 用户 $REAL_USER 已加入 plugdev 组"
+fi
+
+update-desktop-database /usr/share/applications/ 2>/dev/null || true
+
+echo ""
+echo "🎉 安装完成！"
+echo "📦 conda 环境: $ENV_NAME"
+echo "📦 conda 路径: $CONDA_BASE"
+echo "🔒 pyocd 版本: 0.44.1（锁定）"
+echo "⚠️  请重新插拔 CMSIS-DAP 调试器"
+echo "📌 开始菜单搜索【通用烧录工具】启动"
+echo "========================================"

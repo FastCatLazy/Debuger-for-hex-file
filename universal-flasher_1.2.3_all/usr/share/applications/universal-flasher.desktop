@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=通用烧录工具
+Exec=/usr/bin/universal-flasher
+Icon=universal-flasher
+Type=Application
+Terminal=false
+Categories=Development;Electronics;
