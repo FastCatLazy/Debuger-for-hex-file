@@ -7,3 +7,5 @@ A Linux debugger for Linux users to easily download their hex files into their A
 ## Installation
 You can install the software using:
 sudo apt install ./xxxx.deb
+#The software currently supports STM32, Texas Instruments (TI), GD32, and 8051 series microcontrollers.
+#Compatibility with other devices has not been tested yet.
