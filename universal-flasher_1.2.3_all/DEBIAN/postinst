@@ -3,7 +3,7 @@ set -e
 
 ENV_NAME="universal-flasher"
 
-# ========== 获取真实用户 ==========
+# ========== attach the true user ==========
 REAL_USER=$(logname 2>/dev/null || echo "")
 REAL_HOME=""
 
@@ -45,25 +45,25 @@ for base in "$REAL_HOME/miniconda3" "$REAL_HOME/anaconda3" "/opt/miniconda3" "/o
 done
 
 if [ -n "$CONDA_BASE" ]; then
-    echo "  ✅ 检测到现有 conda: $CONDA_BASE"
+    echo " detected conda: $CONDA_BASE"
 else
-    echo "  ❌ 未检测到 conda"
+    echo "  there is none conda"
 fi
 
-# ========== 步骤2: 无 conda 时安装 ==========
+#install conda while none conda env detected
 if [ -z "$CONDA_BASE" ]; then
-    echo "[2/7] 从清华源安装 miniconda3..."
+    echo "[2/7] install from tuna.tsinghua miniconda3..."
     wget -q --show-progress "https://mirrors.tuna.tsinghua.edu.cn/anaconda/miniconda/Miniconda3-latest-Linux-x86_64.sh" -O /tmp/miniconda.sh
     bash /tmp/miniconda.sh -b -p "$REAL_HOME/miniconda3"
     rm -f /tmp/miniconda.sh
     chown -R "$REAL_USER:$REAL_USER" "$REAL_HOME/miniconda3" 2>/dev/null || true
     CONDA_BASE="$REAL_HOME/miniconda3"
-    echo "  ✅ miniconda3 安装完成"
+    echo "miniconda3 finish"
 else
-    echo "[2/7] 跳过 miniconda 安装（已有 conda）"
+    echo "jump miniconda"
 fi
 
-# ========== 步骤3: ToS + 清华源 ==========
+# ========== set pypi tuna.tsinghua ==========
 echo "[3/7] 配置 conda..."
 "$CONDA_BASE/bin/conda" tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main 2>/dev/null || true
 "$CONDA_BASE/bin/conda" tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r 2>/dev/null || true
@@ -73,24 +73,24 @@ echo "[3/7] 配置 conda..."
 "$CONDA_BASE/bin/conda" config --remove channels https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/free 2>/dev/null || true
 "$CONDA_BASE/bin/conda" config --add channels https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/main --force 2>/dev/null || true
 "$CONDA_BASE/bin/conda" config --set show_channel_urls yes --force 2>/dev/null || true
-echo "  ✅ 清华源配置完成"
+echo "finished"
 
-# ========== 步骤4: 创建环境 ==========
-echo "[4/7] 创建 conda 环境: $ENV_NAME..."
+# ========== create conda env ==========
+echo "[4/7] create conda env: $ENV_NAME..."
 if ! "$CONDA_BASE/bin/conda" env list 2>/dev/null | grep -q "^$ENV_NAME "; then
     "$CONDA_BASE/bin/conda" create -n "$ENV_NAME" python=3.10 -y
-    echo "  ✅ 环境创建完成"
+    echo "env finished"
 else
-    echo "  ✅ 环境已存在"
+    echo "env already existed"
 fi
 
-# ========== 步骤5: 先装 cffi（解决依赖冲突）==========
-echo "[5/7] 安装基础依赖..."
+# ==========fix dependence==========
+echo "installing"
 ENV_PIP="$CONDA_BASE/envs/$ENV_NAME/bin/pip"
 ENV_CONDA="$CONDA_BASE/bin/conda"
 "$ENV_CONDA" install -n "$ENV_NAME" -y cffi 2>/dev/null || \
 "$ENV_PIP" install -i https://pypi.tuna.tsinghua.edu.cn/simple cffi
-echo "  ✅ cffi 安装完成"
+echo "finished"
 
 # ========== 步骤6: 安装 pyocd 和 stcgal（清华 pip 源）==========
 echo "[6/7] 安装 pyocd 0.44.1 和 stcgal..."
