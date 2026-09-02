@@ -5,6 +5,6 @@ Priority: optional
 Architecture: all
 Depends: python3, wget, libgl1
 Recommends: zenity | xmessage
-Maintainer: genxianghu <genxianghu@example.com>
+Maintainer: sam <sam@example.com>
 Description: 通用单片机烧录工具
  支持 STM32/GD32/TI/51 单片机的图形化烧录工具
